@@ -105,23 +105,36 @@ async def main(argv):
         logging.info('No subset found based on search parameters.')
         return
 
-    # Create cutouts and download
-    job_url = casda._create_job(subset, 'cutout_service', args.verbose)
-    logging.info(f'Cutout url: {job_url}')
-    cutout_spec = casda._args_to_payload(radius=args.radius*u.arcmin, coordinates=centre, band=freq, verbose=args.verbose)
-    casda._add_cutout_params(job_url, args.verbose, cutout_spec)
-    url_list = casda._complete_job(job_url, args.verbose)
-    logging.info(url_list)
+    # Create cutouts, separate images and weights, download
+    images = subset[subset['dataproduct_subtype'] == 'spectral.restored.3d']
+    weights = subset[subset['dataproduct_subtype'] == 'spectral.weight.3d']
+    images.sort('filename')
+    weights.sort('filename')
+    image_url_list = casda.cutout(images, coordinates=centre, radius=args.radius*u.arcsec, band=freq, verbose=args.verbose)
+    weights_url_list = casda.cutout(weights, coordinates=centre, radius=args.radius*u.arcsec, band=freq, verbose=args.verbose)
+    logging.info(f'Cutout image files: {image_url_list}')
+    logging.info(f'Cutout weight files: {weights_url_list}')
 
-    # Create cutouts and download (image and weight files separately)
+    # Create cutouts and download
     if not os.path.exists(args.output):
         os.makedirs(args.output)
-    file_list = casda.download_files(url_list, savedir=args.output)
-    logging.info(file_list)
+    images_list = casda.download_files(image_url_list, savedir=args.output)
+    weights_list = casda.download_files(weights_url_list, savedir=args.output)
+    logging.info(images_list)
+    logging.info(weights_list)
+
+    # Match original file and downloaded cutout for return
+    image_url_list_nochecksum = [f for f in image_url_list if '.checksum' not in f]
+    weights_url_list_nochecksum = [f for f in weights_url_list if '.checksum' not in f]
+    assert len(image_url_list_nochecksum) == len(images), f"Number of image files {len(images)} and downloaded cutout files {len(image_url_list_nochecksum)} are not equal."
+    assert len(weights_url_list_nochecksum) == len(weights), f"Number of weight files {len(weights)} and downloaded cutout files {len(weights_url_list_nochecksum)} are not equal."
+    image_dict = dict(zip(list(images['filename']), image_url_list_nochecksum))
+    weights_dict = dict(zip(list(weights['filename']), weights_url_list_nochecksum))
+    logging.info(image_dict)
+    logging.info(weights_dict)
 
     # TODO: perform checksum check
-
-    return
+    return (image_dict, weights_dict)
 
 
 if __name__ == '__main__':
