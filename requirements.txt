@@ -1,0 +1,6 @@
+keyring
+astropy
+astroquery>=0.4.7
+prefect
+jinja2
+pathlib
