@@ -1,36 +1,36 @@
 #!/usr/bin/env python3
 
 import os
+import stat
 import subprocess
 from jinja2 import Environment, FileSystemLoader
 from pathlib import Path
 
 
-def pull_image(container, docker_image, singularity):
-    subprocess.run(f'module load {singularity}', shell=True, check=True)
-    subprocess.run(f'singularity pull {container} {docker_image}', shell=True, check=True)
-    assert os.path.exists(container)
-    return
-
-
-def run_linmos(docker_image, container, linmos_config, singularity, *args, **kwargs):
-    """Run linmos as a subprocess call
+def run_linmos(container, linmos_config, scratch, workdir, singularity, **sbatch_kwargs):
+    """Run linmos as a subprocess call with sbatch
 
     """
     if not os.path.exists(container):
-        pull_image(container, docker_image)
+        raise Exception(f'ASKAPsoft image not found at {container}')
     if not os.path.exists(linmos_config):
         raise Exception(f'Linmos config not found at {linmos_config}')
 
-    subprocess.run(f'module load {singularity}', shell=True, check=True)
-    cmd = f"""#!/bin/bash
-    # SBATCH --account={kwargs['account']}
-    # SBATCH --mem={kwargs['mem']}
-    module load {singularity}
-    singularity exec --bind {kwargs['scratch']}:{kwargs['scratch']} linmos -c {linmos_config}
-    """
-    subprocess.run(cmd, shell=True, check=True)
-    return
+    sbatch_file = os.path.join(workdir, 'linmos.sh')
+    cmd = [
+        "#!/bin/bash\n",
+        f"#SBATCH --account={sbatch_kwargs['account']}\n",
+        f"#SBATCH --time={sbatch_kwargs['time']}\n",
+        f"#SBATCH --mem={sbatch_kwargs['mem']}\n",
+        f"module load {singularity}\n",
+        f"singularity exec --bind {scratch}:{scratch} {container} linmos -c {linmos_config}\n"
+    ]
+    with open(sbatch_file, 'w') as f:
+        f.writelines(cmd)
+    st = os.stat(sbatch_file)
+    os.chmod(sbatch_file, st.st_mode | stat.S_IEXEC)
+    res = subprocess.run(f'srun {sbatch_file}', check=True)
+    return res
 
 
 def generate_config(image_dict, weights_dict, output_image, output_weights, config):
@@ -48,10 +48,10 @@ def generate_config(image_dict, weights_dict, output_image, output_weights, conf
     # Update config
     j2_env = Environment(loader=FileSystemLoader(f'{os.path.dirname(__file__)}/template'), trim_blocks=True)
     result = j2_env.get_template('linmos.j2').render(
-        images=images,
-        weights=weights,
-        image_out=image_out,
-        weight_out=weight_out,
+        images=[f.with_suffix('') for f in images],
+        weights=[f.with_suffix('') for f in weights],
+        image_out=image_out.with_suffix(''),
+        weight_out=weight_out.with_suffix(''),
         image_history=image_history
     )
 

@@ -40,7 +40,7 @@ def parse_args(argv):
     parser.add_argument('--radius', type=float, required=True, default=None, help='Radius [arcmin]')
     parser.add_argument('--freq', type=str, required=False, default=None, help='Space-separated frequency range [MHz] (e.g. 1400 1440)')
     parser.add_argument('--vel', type=str, required=False, default=None, help='Space-separated velocity range [km/s]')
-    parser.add_argument('--obs_collection', type=str, required=True, default=None, help='IVOA obscore "obs_collection" filter keyword')
+    parser.add_argument('--obs_collection', type=str, required=False, default='WALLABY', help='IVOA obscore "obs_collection" filter keyword')
     parser.add_argument('--output', type=str, required=True, default=None, help='Output directory for downloaded files')
     parser.add_argument('--config', type=str, required=True, help='CASDA credentials config file', default='casda.ini')
     parser.add_argument('--url', type=str, required=False, default=CASDA_TAP_URL, help='TAP query CASDA_TAP_URL')
@@ -106,8 +106,8 @@ def download(name, ra, dec, radius, freq, vel, obs_collection, output, config, u
     weights = subset[subset['dataproduct_subtype'] == 'spectral.weight.3d']
     images.sort('filename')
     weights.sort('filename')
-    image_url_list = casda.cutout(images, coordinates=centre, radius=radius*u.arcsec, band=freq, verbose=verbose)
-    weights_url_list = casda.cutout(weights, coordinates=centre, radius=radius*u.arcsec, band=freq, verbose=verbose)
+    image_url_list = casda.cutout(images, coordinates=centre, radius=radius*u.arcmin, band=freq, verbose=verbose)
+    weights_url_list = casda.cutout(weights, coordinates=centre, radius=radius*u.arcmin, band=freq, verbose=verbose)
     logging.info(f'Cutout image files: {image_url_list}')
     logging.info(f'Cutout weight files: {weights_url_list}')
 
@@ -124,10 +124,18 @@ def download(name, ra, dec, radius, freq, vel, obs_collection, output, config, u
     weights_url_list_nochecksum = [f for f in weights_url_list if '.checksum' not in f]
     assert len(image_url_list_nochecksum) == len(images), f"Number of image files {len(images)} and downloaded cutout files {len(image_url_list_nochecksum)} are not equal."
     assert len(weights_url_list_nochecksum) == len(weights), f"Number of weight files {len(weights)} and downloaded cutout files {len(weights_url_list_nochecksum)} are not equal."
-    image_dict = dict(zip(list(images['filename']), image_url_list_nochecksum))
-    weights_dict = dict(zip(list(weights['filename']), weights_url_list_nochecksum))
+    image_cutouts = [os.path.join(output, f.rsplit('/')[-1]) for f in image_url_list_nochecksum]
+    weight_cutouts = [os.path.join(output, f.rsplit('/')[-1]) for f in weights_url_list_nochecksum]
+    image_dict = dict(zip(list(images['filename']), image_cutouts))
+    weights_dict = dict(zip(list(weights['filename']), weight_cutouts))
     logging.info(image_dict)
     logging.info(weights_dict)
+
+    # Check file size
+    total_size = 0
+    for f in image_cutouts + weight_cutouts:
+        total_size += os.path.getsize(f)
+    logging.info(f'Mosaicking {len(image_cutouts)} files with total size {round(total_size / 1e6, 4)} MB')
 
     # TODO: perform checksum check
     return (image_dict, weights_dict)

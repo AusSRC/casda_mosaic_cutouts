@@ -4,9 +4,9 @@ import os
 import sys
 import logging
 from argparse import ArgumentParser
+from prefect import task, flow
 from cutout import casda
 from mosaic import linmos
-from prefect import task, flow
 
 
 logging.basicConfig(level=logging.INFO)
@@ -25,7 +25,7 @@ def parse_args(argv):
     parser.add_argument('--radius', type=float, required=True, default=None, help='Radius [arcmin]')
     parser.add_argument('--freq', type=str, required=False, default=None, help='Space-separated frequency range [MHz] (e.g. 1400 1440)')
     parser.add_argument('--vel', type=str, required=False, default=None, help='Space-separated velocity range [km/s]')
-    parser.add_argument('--obs_collection', type=str, required=True, default=None, help='IVOA obscore "obs_collection" filter keyword')
+    parser.add_argument('--obs_collection', type=str, required=False, default='WALLABY', help='IVOA obscore "obs_collection" filter keyword')
     parser.add_argument('--output', type=str, required=True, default=None, help='Output directory for downloaded files')
     parser.add_argument('--config', type=str, required=True, help='CASDA credentials config file', default='casda.ini')
     parser.add_argument('--url', type=str, required=False, default=casda.CASDA_TAP_URL, help='TAP query URL')
@@ -33,11 +33,11 @@ def parse_args(argv):
     parser.add_argument('--milkyway', required=False, default=False, action='store_true', help='Filter for MilkyWay cubes (WALLABY specific query)')
     parser.add_argument('--filename', type=str, required=False, default='mosaic.fits', help='Output filename for mosaicked image')
     parser.add_argument('--verbose', required=False, default=False, action='store_true', help='Verbose')
-    parser.add_argument('--singularity', type=str, required=False, default='singularity/4.1.0', help='Singularity module')
+    parser.add_argument('--singularity', type=str, required=False, default='singularity/4.1.0-mpi', help='Singularity module')
     parser.add_argument('--scratch', type=str, required=False, default='/scratch', help='Scratch mount')
-    parser.add_argument('--docker_image', type=str, required=False, default='docker://csirocass/askapsoft-1.15.0', help='ASKAPsoft docker image containing linmos')
-    parser.add_argument('--container', type=str, required=False, default='askapsoft.sif', help='Singularity container name for ASKAPsoft image')
+    parser.add_argument('--askapsoft', type=str, required=False, default='askapsoft.sif', help='Path to ASKAPsoft singularity container')
     parser.add_argument('--account', type=str, required=False, default='ja3', help='SBATCH header --account')
+    parser.add_argument('--time', type=str, required=False, default='1:00:00', help='SBATCH header --time')
     parser.add_argument('--mem', type=str, required=False, default='32G', help='SBATCH header --mem')
     args = parser.parse_args(argv)
     return args
@@ -54,9 +54,9 @@ def generate_mosaic_config(image_dict, weight_dict, output_image, output_weights
     return output_config
 
 @task
-def mosaic(docker_image, container, linmos_config, **kwargs):
-    image, weights = linmos.run_linmos(docker_image, container, linmos_config, **kwargs)
-    return (image, weights)
+def mosaic(container, linmos_config, scratch, workdir, singularity, **sbatch_kwargs):
+    res = linmos.run_linmos(container, linmos_config, scratch, workdir, singularity, **sbatch_kwargs)
+    return res
 
 @flow
 def cutout_mosaic(argv):
@@ -81,8 +81,12 @@ def cutout_mosaic(argv):
     # TODO: compare filesize with memory to ensure sufficient resources requested
 
     logging.info('Running linmos')
-    container = os.path.join(workdir, args.container)
-    mosaic(args.docker_image, container, linmos_config)
+    sbatch_kwargs = {
+        'account': args.account,
+        'time': args.time,
+        'mem': args.mem
+    }
+    mosaic(args.askapsoft, linmos_config, args.scratch, workdir, args.singularity, **sbatch_kwargs)
     if not os.path.exists(output_image) or not os.path.exists(output_weights):
         raise Exception('Pipeline error did not produce mosaicked images or weights')
     logging.info(f'Mosaic image file written to {output_image}')
