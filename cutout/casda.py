@@ -13,6 +13,7 @@ from astropy.coordinates import SkyCoord
 from astropy import units as u
 from astroquery.casda import Casda
 from astroquery.utils.tap.core import TapPlus
+from prefect import task, get_run_logger
 
 
 KEYRING_SERVICE = 'astroquery:casda.csiro.au'
@@ -50,7 +51,10 @@ def parse_args(argv):
     return args
 
 
-def download(name, ra, dec, radius, freq, vel, obs_collection, output, config, url, sbids, query, milkyway, logger, verbose, *args, **kwargs):
+@task
+def download(name, ra, dec, radius, freq, vel, obs_collection, output, config, url, sbids, query, milkyway, verbose, *args, **kwargs):
+    logger = get_run_logger()
+
     # Parse config
     assert os.path.exists(config), f'Config file not found at {config}'
     parser = ConfigParser()

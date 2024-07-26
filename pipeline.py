@@ -4,12 +4,9 @@ import os
 import sys
 import logging
 from argparse import ArgumentParser
-from prefect import task, flow, get_run_logger
+from prefect import flow, get_run_logger
 from cutout import casda
 from mosaic import linmos
-
-
-logger = get_run_logger()
 
 
 def parse_args(argv):
@@ -44,23 +41,9 @@ def parse_args(argv):
     return args
 
 
-@task
-def download_cutouts(**kwargs):
-    image_dict, weight_dict = casda.download(**kwargs, logger=logger)
-    return (image_dict, weight_dict)
-
-@task
-def generate_mosaic_config(image_dict, weight_dict, output_image, output_weights, output_config, logger):
-    linmos.generate_config(image_dict, weight_dict, output_image, output_weights, output_config, logger)
-    return output_config
-
-@task
-def mosaic(container, linmos_config, scratch, workdir, singularity, logger, **sbatch_kwargs):
-    res = linmos.run_linmos(container, linmos_config, scratch, workdir, singularity, logger, **sbatch_kwargs)
-    return res
-
 @flow
 def cutout_mosaic(argv):
+    logger = get_run_logger()
     args = parse_args(argv)
     logger.info('Starting mosaic workflow')
 
@@ -69,27 +52,25 @@ def cutout_mosaic(argv):
     if not os.path.exists(workdir):
         logger.info(f'Output directory not found. Creating directory {workdir}')
         os.makedirs(workdir)
+
+    # Download images and weights
+    logger.info('Downloading cutouts')
+    image_dict, weight_dict = casda.download(**args.__dict__)
+
+    # Generate linmos config
+    logger.info('Generating linmos config')
+    linmos_config = os.path.join(workdir, 'linmos.conf')
     output_image = os.path.join(workdir, args.filename)
     output_weights = os.path.join(workdir, f'weights.{args.filename}')
-    linmos_config = os.path.join(workdir, 'linmos.conf')
-
-    logger.info('Downloading cutouts')
-    image_dict, weight_dict = download_cutouts(**args.__dict__)
-
-    logger.info('Generating linmos config')
-    linmos_config = generate_mosaic_config(image_dict, weight_dict, output_image, output_weights, linmos_config, logger)
+    linmos.generate_config(image_dict, weight_dict, output_image, output_weights, linmos_config)
 
     # TODO: compare filesize with memory to ensure sufficient resources requested
-
-    logger.info('Running linmos')
     sbatch_kwargs = {
         'account': args.account,
         'time': args.time,
         'mem': args.mem
     }
-    mosaic(args.askapsoft, linmos_config, args.scratch, workdir, args.singularity, logger, **sbatch_kwargs)
-    logger.info('Download completed')
-    logger.info('Submitting linmos job...')
+    linmos.run_linmos(args.askapsoft, linmos_config, args.scratch, workdir, args.singularity, **sbatch_kwargs)
     return (output_image, output_weights)
 
 
