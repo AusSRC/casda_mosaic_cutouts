@@ -40,6 +40,20 @@ def run_linmos(container, linmos_config, scratch, workdir, singularity, **sbatch
 
 
 @task
+def run_linmos_docker(docker_image, volume, linmos_config, **kwargs):
+    """Run linmos locally using Docker.
+
+    """
+    logger = get_run_logger()
+    if not os.path.exists(linmos_config):
+        raise Exception(f'Linmos config not found at {linmos_config}')
+    cmd = f"docker run -it -v {volume}:{volume} {docker_image} linmos -c {linmos_config}"
+    logger.info(cmd)
+    res = subprocess.run(cmd, shell=True, check=True)
+    return res
+
+
+@task
 def generate_config(image_dict, weights_dict, output_image, output_weights, config):
     """Generate linmos config from template.
     Image and weights dicts are mappings from original fits cube to cutout filename. The original

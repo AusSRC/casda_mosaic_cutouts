@@ -37,6 +37,8 @@ def parse_args(argv):
     parser.add_argument('--account', type=str, required=False, default='ja3', help='SBATCH header --account')
     parser.add_argument('--time', type=str, required=False, default='1:00:00', help='SBATCH header --time')
     parser.add_argument('--mem', type=str, required=False, default='32G', help='SBATCH header --mem')
+    parser.add_argument('--askapsoft_docker', type=str, required=False, default='csirocass/askapsoft:1.15.0-setonix', help='Docker image for ASKAPsoft container')
+    parser.add_argument('--local', required=False, default=False, action='store_true', help='Run locally')
     args = parser.parse_args(argv)
     return args
 
@@ -58,19 +60,22 @@ def cutout_mosaic(argv):
     image_dict, weight_dict = casda.download(**args.__dict__)
 
     # Generate linmos config
-    logger.info('Generating linmos config')
     linmos_config = os.path.join(workdir, 'linmos.conf')
     output_image = os.path.join(workdir, args.filename)
-    output_weights = os.path.join(workdir, f'weights.{args.filename}')
+    output_weights = os.path.join(workdir, f'weights_{args.filename}')
+    logger.info(f'Generating linmos config {linmos_config}')
     linmos.generate_config(image_dict, weight_dict, output_image, output_weights, linmos_config)
 
     # TODO: compare filesize with memory to ensure sufficient resources requested
-    sbatch_kwargs = {
-        'account': args.account,
-        'time': args.time,
-        'mem': args.mem
-    }
-    linmos.run_linmos(args.askapsoft, linmos_config, args.scratch, workdir, args.singularity, **sbatch_kwargs)
+    if args.local:
+        linmos.run_linmos_docker(args.askapsoft_docker, workdir, linmos_config)
+    else:
+        sbatch_kwargs = {
+            'account': args.account,
+            'time': args.time,
+            'mem': args.mem
+        }
+        linmos.run_linmos(args.askapsoft, linmos_config, args.scratch, workdir, args.singularity, **sbatch_kwargs)
     return (output_image, output_weights)
 
 
