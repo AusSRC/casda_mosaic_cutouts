@@ -25,7 +25,7 @@ def run_linmos(container, linmos_config, scratch, workdir, singularity, **sbatch
     cmd = [
         "#!/bin/bash\n",
         f"#SBATCH --account={sbatch_kwargs['account']}\n",
-        f"#SBATCH --time={sbatch_kwargs['time']}\zn",
+        f"#SBATCH --time={sbatch_kwargs['time']}\n",
         f"#SBATCH --mem={sbatch_kwargs['mem']}\n",
         f"module load {singularity}\n",
         f"singularity exec --bind {scratch}:{scratch} {container} linmos -c {linmos_config}\n"
@@ -35,12 +35,12 @@ def run_linmos(container, linmos_config, scratch, workdir, singularity, **sbatch
     st = os.stat(sbatch_file)
     os.chmod(sbatch_file, st.st_mode | stat.S_IEXEC)
     res = subprocess.run(f'sbatch {sbatch_file}', shell=True, check=True)
-    logging.info('Job submitted')
+    logger.info('Job submitted')
     return res
 
 
 @task
-def generate_config(image_dict, weights_dict, output_image, output_weights, config, logger):
+def generate_config(image_dict, weights_dict, output_image, output_weights, config):
     """Generate linmos config from template.
     Image and weights dicts are mappings from original fits cube to cutout filename. The original
     filenames will be stored in the image history.
