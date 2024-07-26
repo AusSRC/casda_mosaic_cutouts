@@ -1,12 +1,14 @@
 # CASDA mosaic cutout tool
 
-Code for producing mosaics of target sources. Uses CASDA for generating the cutouts and linmos for mosaicking the outputs.
+Code for producing a mosaic of various cutout targets. Retrieves cutouts using CASDA and uses linmos for mosaicking the outputs.
 
 * Download cutouts from CASDA
 * Generate linmos config
 * Run linmos (subprocess call)
 
 This code can be run locally on a laptop with Docker installed (only tested with MacOS) or on a Slurm HPC system.
+
+**WARNING**: this code takes a long time (a few hours) to run due to the slow CASDA cutout generation process. Create the smallest possible cutout to minimise staging times.
 
 ## Help
 
