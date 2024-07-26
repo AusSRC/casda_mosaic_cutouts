@@ -3,6 +3,7 @@
 import os
 import sys
 import math
+import json
 import logging
 import keyring
 import numpy as np
@@ -12,9 +13,6 @@ from astropy.coordinates import SkyCoord
 from astropy import units as u
 from astroquery.casda import Casda
 from astroquery.utils.tap.core import TapPlus
-
-
-logging.basicConfig(level=logging.INFO)
 
 
 KEYRING_SERVICE = 'astroquery:casda.csiro.au'
@@ -45,13 +43,14 @@ def parse_args(argv):
     parser.add_argument('--config', type=str, required=True, help='CASDA credentials config file', default='casda.ini')
     parser.add_argument('--url', type=str, required=False, default=CASDA_TAP_URL, help='TAP query CASDA_TAP_URL')
     parser.add_argument('--query', type=str, required=False, default=TAP_QUERY, help='IVOA obscore query string')
+    parser.add_argument('--sbids', required=False, default=None, type=str, nargs='+', help='Specific SBIDs of the observations to filter to use for the cutouts')
     parser.add_argument('--milkyway', required=False, default=False, action='store_true', help='Filter for MilkyWay cubes (WALLABY specific query)')
     parser.add_argument('--verbose', required=False, default=False, action='store_true', help='Verbose')
     args = parser.parse_args(argv)
     return args
 
 
-def download(name, ra, dec, radius, freq, vel, obs_collection, output, config, url, query, milkyway, verbose, *args, **kwargs):
+def download(name, ra, dec, radius, freq, vel, obs_collection, output, config, url, sbids, query, milkyway, logger, verbose, *args, **kwargs):
     # Parse config
     assert os.path.exists(config), f'Config file not found at {config}'
     parser = ConfigParser()
@@ -59,7 +58,7 @@ def download(name, ra, dec, radius, freq, vel, obs_collection, output, config, u
     keyring.set_password(KEYRING_SERVICE, parser['CASDA']['username'], parser['CASDA']['password'])
 
     # Login to CASDA
-    logging.info('Authenticating with CASDA')
+    logger.info('Authenticating with CASDA')
     casda = Casda()
     casda.login(username=parser['CASDA']['username'])
 
@@ -70,7 +69,7 @@ def download(name, ra, dec, radius, freq, vel, obs_collection, output, config, u
         centre = SkyCoord(ra, dec, unit='deg')
     else:
         raise Exception('Either --name or --ra and --deg arguments are required.')
-    logging.info(f'Centre coordinates: ({centre.ra}, {centre.dec})')
+    logger.info(f'Centre coordinates: ({centre.ra}, {centre.dec})')
 
     freq = None
     if freq is not None:
@@ -81,63 +80,69 @@ def download(name, ra, dec, radius, freq, vel, obs_collection, output, config, u
         freq.sort()
     else:
         raise Exception('Either --freq [MHz] or --vel [km/s] range must be provided (space separated)')
-    logging.info(f'Frequency range: {freq}')
+    logger.info(f'Frequency range: {freq}')
 
     # TAP query for observations
     tap = TapPlus(url=url)
     query = query.replace('$OBS_COLLECTION', obs_collection)
-    logging.info(f'Submitting query: {query}')
+    logger.info(f'Submitting query: {query}')
     job = tap.launch_job_async(query)
     observations = job.get_results()
-    logging.info(observations)
+    logger.info(observations)
 
     # Various filters
-    logging.info('Filtered results')
+    logger.info('Filtered results')
     subset = observations[[('MilkyWay' in f) == milkyway for f in observations['filename']]]
     subset = subset[abs(subset['s_ra'] - centre.ra) < SEPARATION]
     subset = subset[abs(subset['s_dec'] - centre.dec) < SEPARATION]
-    logging.info(subset)
+    logger.info(subset)
     if len(subset) == 0:
-        logging.info('No subset found based on search parameters.')
+        logger.info('No subset found based on search parameters.')
         return
 
-    # Create cutouts, separate images and weights, download
-    images = subset[subset['dataproduct_subtype'] == 'spectral.restored.3d']
-    weights = subset[subset['dataproduct_subtype'] == 'spectral.weight.3d']
-    images.sort('filename')
-    weights.sort('filename')
-    image_url_list = casda.cutout(images, coordinates=centre, radius=radius*u.arcmin, band=freq, verbose=verbose)
-    weights_url_list = casda.cutout(weights, coordinates=centre, radius=radius*u.arcmin, band=freq, verbose=verbose)
-    logging.info(f'Cutout image files: {image_url_list}')
-    logging.info(f'Cutout weight files: {weights_url_list}')
-
-    # Create cutouts and download
+    # Download
     if not os.path.exists(output):
         os.makedirs(output)
-    images_list = casda.download_files(image_url_list, savedir=output)
-    weights_list = casda.download_files(weights_url_list, savedir=output)
-    logging.info(images_list)
-    logging.info(weights_list)
+    image_dict = {}
+    weights_dict = {}
+    for obs_id in list(set(subset['obs_id'])):
+        # Filter sbids
+        if sbids is not None:
+            if not any([sbid in obs_id for sbid in sbids]):
+                logger.info(f'Filtering out {obs_id} observations')
+                continue
+        logger.info(f'Downloading cutouts for observation {obs_id}')
+        subset_sbid = subset[subset['obs_id'] == obs_id]
+        logger.info(subset_sbid)
 
-    # Match original file and downloaded cutout for return
-    image_url_list_nochecksum = [f for f in image_url_list if '.checksum' not in f]
-    weights_url_list_nochecksum = [f for f in weights_url_list if '.checksum' not in f]
-    assert len(image_url_list_nochecksum) == len(images), f"Number of image files {len(images)} and downloaded cutout files {len(image_url_list_nochecksum)} are not equal."
-    assert len(weights_url_list_nochecksum) == len(weights), f"Number of weight files {len(weights)} and downloaded cutout files {len(weights_url_list_nochecksum)} are not equal."
-    image_cutouts = [os.path.join(output, f.rsplit('/')[-1]) for f in image_url_list_nochecksum]
-    weight_cutouts = [os.path.join(output, f.rsplit('/')[-1]) for f in weights_url_list_nochecksum]
-    image_dict = dict(zip(list(images['filename']), image_cutouts))
-    weights_dict = dict(zip(list(weights['filename']), weight_cutouts))
-    logging.info(image_dict)
-    logging.info(weights_dict)
+        # Download image and weights files separately per sbid
+        # TODO: perform checksum check
+        img = subset_sbid[subset_sbid['dataproduct_subtype'] == 'spectral.restored.3d']
+        wgt = subset_sbid[subset_sbid['dataproduct_subtype'] == 'spectral.weight.3d']
+        img_url = [f for f in casda.cutout(img, coordinates=centre, radius=radius*u.arcmin, band=freq, verbose=verbose) if '.checksum' not in f]
+        wgt_url = [f for f in casda.cutout(wgt, coordinates=centre, radius=radius*u.arcmin, band=freq, verbose=verbose) if '.checksum' not in f]
+        img_download = casda.download_files(img_url, savedir=output)
+        wgt_download = casda.download_files(wgt_url, savedir=output)
+        logger.info(img_download)
+        logger.info(wgt_download)
+        img_download_filename = os.path.join(output, img_url[0].rsplit('/')[-1])
+        wgt_download_filename = os.path.join(output, wgt_url[0].rsplit('/')[-1])
+        image_dict[str(img[0]['filename'])] = img_download_filename
+        weights_dict[str(wgt[0]['filename'])] = img_download_filename
 
     # Check file size
     total_size = 0
-    for f in image_cutouts + weight_cutouts:
+    all_files = list(image_dict.values()) + list(weights_dict.values())
+    for f in all_files:
         total_size += os.path.getsize(f)
-    logging.info(f'Mosaicking {len(image_cutouts)} files with total size {round(total_size / 1e6, 4)} MB')
+    logger.info(f'Downloaded {len(all_files)} files with total size {round(total_size / 1e6, 4)} MB')
 
-    # TODO: perform checksum check
+    # Write file map
+    logger.info(image_dict)
+    logger.info(weights_dict)
+    with open(os.path.join(output, 'file_map.json'), 'w') as f:
+        json.dump({**image_dict, **weights_dict}, f)
+
     return (image_dict, weights_dict)
 
 

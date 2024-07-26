@@ -4,12 +4,12 @@ import os
 import sys
 import logging
 from argparse import ArgumentParser
-from prefect import task, flow
+from prefect import task, flow, get_run_logger
 from cutout import casda
 from mosaic import linmos
 
 
-logging.basicConfig(level=logging.INFO)
+logger = get_run_logger()
 
 
 def parse_args(argv):
@@ -25,6 +25,7 @@ def parse_args(argv):
     parser.add_argument('--radius', type=float, required=True, default=None, help='Radius [arcmin]')
     parser.add_argument('--freq', type=str, required=False, default=None, help='Space-separated frequency range [MHz] (e.g. 1400 1440)')
     parser.add_argument('--vel', type=str, required=False, default=None, help='Space-separated velocity range [km/s]')
+    parser.add_argument('--sbids', required=False, default=None, type=str, nargs='+', help='Specific SBIDs of the observations to filter to use for the cutouts')
     parser.add_argument('--obs_collection', type=str, required=False, default='WALLABY', help='IVOA obscore "obs_collection" filter keyword')
     parser.add_argument('--output', type=str, required=True, default=None, help='Output directory for downloaded files')
     parser.add_argument('--config', type=str, required=True, help='CASDA credentials config file', default='casda.ini')
@@ -45,53 +46,50 @@ def parse_args(argv):
 
 @task
 def download_cutouts(**kwargs):
-    image_dict, weight_dict = casda.download(**kwargs)
+    image_dict, weight_dict = casda.download(**kwargs, logger=logger)
     return (image_dict, weight_dict)
 
 @task
-def generate_mosaic_config(image_dict, weight_dict, output_image, output_weights, output_config):
-    linmos.generate_config(image_dict, weight_dict, output_image, output_weights, output_config)
+def generate_mosaic_config(image_dict, weight_dict, output_image, output_weights, output_config, logger):
+    linmos.generate_config(image_dict, weight_dict, output_image, output_weights, output_config, logger)
     return output_config
 
 @task
-def mosaic(container, linmos_config, scratch, workdir, singularity, **sbatch_kwargs):
-    res = linmos.run_linmos(container, linmos_config, scratch, workdir, singularity, **sbatch_kwargs)
+def mosaic(container, linmos_config, scratch, workdir, singularity, logger, **sbatch_kwargs):
+    res = linmos.run_linmos(container, linmos_config, scratch, workdir, singularity, logger, **sbatch_kwargs)
     return res
 
 @flow
 def cutout_mosaic(argv):
     args = parse_args(argv)
-    logging.info('Starting mosaic workflow')
+    logger.info('Starting mosaic workflow')
 
     # Setup work environment
     workdir = args.output
     if not os.path.exists(workdir):
-        logging.info(f'Output directory not found. Creating directory {workdir}')
+        logger.info(f'Output directory not found. Creating directory {workdir}')
         os.makedirs(workdir)
     output_image = os.path.join(workdir, args.filename)
     output_weights = os.path.join(workdir, f'weights.{args.filename}')
     linmos_config = os.path.join(workdir, 'linmos.conf')
 
-    logging.info('Downloading cutouts')
+    logger.info('Downloading cutouts')
     image_dict, weight_dict = download_cutouts(**args.__dict__)
 
-    logging.info('Generating linmos config')
-    linmos_config = generate_mosaic_config(image_dict, weight_dict, output_image, output_weights, linmos_config)
+    logger.info('Generating linmos config')
+    linmos_config = generate_mosaic_config(image_dict, weight_dict, output_image, output_weights, linmos_config, logger)
 
     # TODO: compare filesize with memory to ensure sufficient resources requested
 
-    logging.info('Running linmos')
+    logger.info('Running linmos')
     sbatch_kwargs = {
         'account': args.account,
         'time': args.time,
         'mem': args.mem
     }
-    mosaic(args.askapsoft, linmos_config, args.scratch, workdir, args.singularity, **sbatch_kwargs)
-    if not os.path.exists(output_image) or not os.path.exists(output_weights):
-        raise Exception('Pipeline error did not produce mosaicked images or weights')
-    logging.info(f'Mosaic image file written to {output_image}')
-    logging.info(f'Mosaic weights file written to {output_weights}')
-    logging.info('Completed')
+    mosaic(args.askapsoft, linmos_config, args.scratch, workdir, args.singularity, logger, **sbatch_kwargs)
+    logger.info('Download completed')
+    logger.info('Submitting linmos job...')
     return (output_image, output_weights)
 
 

@@ -7,7 +7,7 @@ from jinja2 import Environment, FileSystemLoader
 from pathlib import Path
 
 
-def run_linmos(container, linmos_config, scratch, workdir, singularity, **sbatch_kwargs):
+def run_linmos(container, linmos_config, scratch, workdir, singularity, logger, **sbatch_kwargs):
     """Run linmos as a subprocess call with sbatch
 
     """
@@ -29,11 +29,11 @@ def run_linmos(container, linmos_config, scratch, workdir, singularity, **sbatch
         f.writelines(cmd)
     st = os.stat(sbatch_file)
     os.chmod(sbatch_file, st.st_mode | stat.S_IEXEC)
-    res = subprocess.run(f'srun {sbatch_file}', check=True)
+    res = subprocess.run(f'sbatch {sbatch_file}', shell=True, check=True)
     return res
 
 
-def generate_config(image_dict, weights_dict, output_image, output_weights, config):
+def generate_config(image_dict, weights_dict, output_image, output_weights, config, logger):
     """Generate linmos config from template.
     Image and weights dicts are mappings from original fits cube to cutout filename. The original
     filenames will be stored in the image history.

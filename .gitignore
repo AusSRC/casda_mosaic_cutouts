@@ -1,6 +1,9 @@
 # Custom
 .vscode
 run.sh
+slurm-*
+*.sif
+outputs*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

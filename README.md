@@ -25,7 +25,7 @@ usage: pipeline.py [-h]
 
 ## Usage
 
-This program needs to be run on a HPC (Slurm) environment with [Singularity](https://docs.sylabs.io/guides/3.5/user-guide/introduction.html) installed.
+This program needs to be run on a HPC (Slurm) environment with Python and [Singularity](https://docs.sylabs.io/guides/3.5/user-guide/introduction.html) installed.
 
 Most of the arguments shown in the help are not required to run the program. The essential arguments are
 
@@ -35,26 +35,25 @@ Most of the arguments shown in the help are not required to run the program. The
 * `--output` for the directory where the cutouts, mosaics and temporary files will be stored, and
 * `--config` for CASDA credentials (see below for template).
 
-To run this program fist pull the required singularity images.
+To run this program fist pull the required ASKAPsoft singularity image.
 
 ```
 module load singularity/4.1.0-mpi
-singularity pull mosaic_cutouts.sif docker://aussrc/mosaic_cutouts:latest
 singularity pull askapsoft.sif docker://csirocass/askapsoft:1.15.0-setonix
 ```
 
-Then create an `sbatch` script (called `run.sh` for example) with the arguments for the source of interest, and pointing to the `askapsoft.sif` image:
+Then create an `sbatch` script (called `run.sh` for example) with the arguments for the source of interest, output directory for your files, and pointing to the `askapsoft.sif` image:
 
 ```
 #!/bin/bash
 
 #SBATCH --account=ja3
-#SBATCH --time=1:00:00
+#SBATCH --time=12:00:00
 #SBATCH --mem=16G
-module load singularity/4.1.0-mpi
-singularity exec --bind /scratch:/scratch \
-    /path/to/mosaic_cutout.sif \
-    python3 /app/pipeline.py \
+module load python/3.11.6
+module load py-pip/23.1.2-py3.11.6
+pip install --user -r requirements.txt
+python3 pipeline.py \
     --ra <RA [deg]> --dec <DEC [deg]> --radius <RADIUS [arcmin]> \
     --vel <VELOCITY RANGE [km/s]> \
     --config /path/to/casda.ini \
@@ -64,7 +63,11 @@ singularity exec --bind /scratch:/scratch \
 
 **NOTE**: For Setonix the correct default module is provided in the snippet above, but otherwise run `module spider singularity` to find the correct version for your HPC environment
 
-And finally you can run the container with `srun run.sh` or `sbatch run.sh`
+Then to run the program:
+
+```
+sbatch run.sh
+```
 
 ## Configuration
 
