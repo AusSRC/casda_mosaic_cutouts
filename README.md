@@ -1,4 +1,4 @@
-# Mosaic cutout tool
+# CASDA mosaic cutout tool
 
 Code for producing mosaics of target sources. Uses CASDA for generating the cutouts and linmos for mosaicking the outputs.
 
