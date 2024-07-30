@@ -4,9 +4,9 @@ import os
 import sys
 import math
 import json
-import logging
 import keyring
 import numpy as np
+import asyncio
 from configparser import ConfigParser
 from argparse import ArgumentParser
 from astropy.coordinates import SkyCoord
@@ -51,8 +51,35 @@ def parse_args(argv):
     return args
 
 
+def _cutout_and_download(casda, file_list, centre, radius, freq, output, logger, verbose):
+    """Download and cutout with CASDA astroquery for a single cutout
+
+    """
+    filename = str(file_list[0]['filename'])
+    logger.info(f'Cutout and download task for {filename} started')
+    url_list = [f for f in casda.cutout(file_list, coordinates=centre, radius=radius*u.arcmin, band=freq, verbose=verbose) if '.checksum' not in f]
+    res = casda.download_files(url_list, savedir=output)
+    logger.info(f'Download complete: {res}')
+    download_filename = os.path.join(output, url_list[0].rsplit('/')[-1])
+    filename_dict = {filename: download_filename}
+    return filename_dict
+
+
+async def _casda_download_subset(loop, casda, subset_sbid, centre, radius, freq, output, logger, verbose):
+    """Download image and weight pairs for an observation async
+
+    """
+    img = subset_sbid[subset_sbid['dataproduct_subtype'] == 'spectral.restored.3d']
+    wgt = subset_sbid[subset_sbid['dataproduct_subtype'] == 'spectral.weight.3d']
+    img_task = loop.run_in_executor(None, _cutout_and_download, casda, img, centre, radius, freq, output, logger, verbose)
+    wgt_task = loop.run_in_executor(None, _cutout_and_download, casda, wgt, centre, radius, freq, output, logger, verbose)
+    img_dict, wgt_dict = await asyncio.gather(img_task, wgt_task)
+    return img_dict, wgt_dict
+
+
 @task
-def download(name, ra, dec, radius, freq, vel, obs_collection, output, config, url, sbids, query, milkyway, verbose, *args, **kwargs):
+async def download(name, ra, dec, radius, freq, vel, obs_collection, output, config, url, sbids, query, milkyway, verbose, *args, **kwargs):
+    loop = asyncio.get_running_loop()
     logger = get_run_logger()
 
     # Parse config
@@ -104,11 +131,11 @@ def download(name, ra, dec, radius, freq, vel, obs_collection, output, config, u
         logger.info('No subset found based on search parameters.')
         return
 
-    # Download
+    # Download with async
     if not os.path.exists(output):
         os.makedirs(output)
-    image_dict = {}
-    weights_dict = {}
+
+    task_list = []
     for obs_id in list(set(subset['obs_id'])):
         # Filter sbids
         if sbids is not None:
@@ -120,19 +147,17 @@ def download(name, ra, dec, radius, freq, vel, obs_collection, output, config, u
         logger.info(subset_sbid)
 
         # Download image and weights files separately per sbid
-        # TODO: perform checksum check
-        img = subset_sbid[subset_sbid['dataproduct_subtype'] == 'spectral.restored.3d']
-        wgt = subset_sbid[subset_sbid['dataproduct_subtype'] == 'spectral.weight.3d']
-        img_url = [f for f in casda.cutout(img, coordinates=centre, radius=radius*u.arcmin, band=freq, verbose=verbose) if '.checksum' not in f]
-        wgt_url = [f for f in casda.cutout(wgt, coordinates=centre, radius=radius*u.arcmin, band=freq, verbose=verbose) if '.checksum' not in f]
-        img_download = casda.download_files(img_url, savedir=output)
-        wgt_download = casda.download_files(wgt_url, savedir=output)
-        logger.info(img_download)
-        logger.info(wgt_download)
-        img_download_filename = os.path.join(output, img_url[0].rsplit('/')[-1])
-        wgt_download_filename = os.path.join(output, wgt_url[0].rsplit('/')[-1])
-        image_dict[str(img[0]['filename'])] = img_download_filename
-        weights_dict[str(wgt[0]['filename'])] = img_download_filename
+        task = asyncio.create_task(
+            _casda_download_subset(loop, casda, subset_sbid, centre, radius, freq, output, logger, verbose)
+        )
+        task_list.append(task)
+
+    image_dict = {}
+    weights_dict = {}
+    task_res = await asyncio.gather(*task_list)
+    for img_dict, wgt_dict in task_res:
+        image_dict = {**image_dict, **img_dict}
+        weights_dict = {**weights_dict, **wgt_dict}
 
     # Check file size
     total_size = 0
@@ -150,7 +175,11 @@ def download(name, ra, dec, radius, freq, vel, obs_collection, output, config, u
     return (image_dict, weights_dict)
 
 
+async def main(argv):
+    args = parse_args(argv)
+    image_dict, weights_dict = await download(**args.__dict__)
+
+
 if __name__ == '__main__':
     argv = sys.argv[1:]
-    args = parse_args(argv)
-    download(**args.__dict__)
+    asyncio.run(main(argv))
