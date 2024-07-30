@@ -59,7 +59,7 @@ def _cutout_and_download(casda, file_list, centre, radius, freq, output, logger,
     logger.info(f'Cutout and download task for {filename} started')
     url_list = [f for f in casda.cutout(file_list, coordinates=centre, radius=radius*u.arcmin, band=freq, verbose=verbose) if '.checksum' not in f]
     res = casda.download_files(url_list, savedir=output)
-    logger.info(f'Download complete: {res}')
+    logger.info(f'Download complete: {filename}')
     download_filename = os.path.join(output, url_list[0].rsplit('/')[-1])
     filename_dict = {filename: download_filename}
     return filename_dict
