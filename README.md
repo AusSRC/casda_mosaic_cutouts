@@ -8,8 +8,6 @@ Code for producing a mosaic of various cutout targets. Retrieves cutouts using C
 
 This code can be run locally on a laptop with Docker installed (only tested with MacOS) or on a Slurm HPC system.
 
-**WARNING**: this code takes a long time (a few hours) to run due to the slow CASDA cutout generation process. Create the smallest possible cutout to minimise staging times.
-
 ## Help
 
 ```
@@ -43,6 +41,12 @@ Some helpful arguments include
 * `--filename` to name the output mosaic image and weights file
 * `--sbids` to filter for the known SBIDs containing your target
 
+### Performance notes
+
+* this code takes a long time (many hours) to run due to the slow CASDA staging and cutout retrieval step
+* Provide the `--sbids` argument where possible so that fewer large files need to be staged
+* Use the smallest cutout possible to minimise file size
+
 ### Slurm
 
 To run the program on a HPC (Slurm) environment you will require an environment with Python and [Singularity](https://docs.sylabs.io/guides/3.5/user-guide/introduction.html) installed.
@@ -60,7 +64,7 @@ Then create an `sbatch` script (e.g. `run.sh`). You will load the python and pip
 #!/bin/bash
 
 #SBATCH --account=ja3
-#SBATCH --time=12:00:00
+#SBATCH --time=24:00:00
 #SBATCH --mem=16G
 module load python/3.11.6
 module load py-pip/23.1.2-py3.11.6

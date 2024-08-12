@@ -2,6 +2,7 @@
 
 import os
 import sys
+import asyncio
 from argparse import ArgumentParser
 from prefect import flow, get_run_logger
 from cutout import casda
@@ -44,10 +45,10 @@ def parse_args(argv):
 
 
 @flow
-def cutout_mosaic(argv):
+async def cutout_mosaic(argv):
     logger = get_run_logger()
     args = parse_args(argv)
-    logger.info('Starting mosaic workflow')
+    logger.info(f'Starting mosaic workflow to produce files {args.filename}.fits and weights_{args.filename}.fits')
 
     # Setup work environment
     workdir = args.output
@@ -57,7 +58,7 @@ def cutout_mosaic(argv):
 
     # Download images and weights
     logger.info('Downloading cutouts')
-    image_dict, weight_dict = casda.download(**args.__dict__)
+    image_dict, weight_dict = await casda.download(**args.__dict__)
 
     # Generate linmos config
     linmos_config = os.path.join(workdir, 'linmos.conf')
@@ -81,4 +82,4 @@ def cutout_mosaic(argv):
 
 if __name__ == '__main__':
     argv = sys.argv[1:]
-    cutout_mosaic(argv)
+    asyncio.run(cutout_mosaic(argv))
