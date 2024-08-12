@@ -5,4 +5,3 @@ keyrings.alt
 prefect
 jinja2
 pathlib
-autokey

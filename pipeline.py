@@ -2,7 +2,6 @@
 
 import os
 import sys
-import logging
 from argparse import ArgumentParser
 from prefect import flow, get_run_logger
 from cutout import casda
@@ -39,6 +38,7 @@ def parse_args(argv):
     parser.add_argument('--mem', type=str, required=False, default='32G', help='SBATCH header --mem')
     parser.add_argument('--askapsoft_docker', type=str, required=False, default='csirocass/askapsoft:1.15.0-setonix', help='Docker image for ASKAPsoft container')
     parser.add_argument('--local', required=False, default=False, action='store_true', help='Run locally')
+    parser.add_argument('--no_keyring', required=False, default=False, action='store_true', help='Interactive prompt for password')
     args = parser.parse_args(argv)
     return args
 

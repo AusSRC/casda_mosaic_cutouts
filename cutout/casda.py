@@ -4,7 +4,6 @@ import os
 import sys
 import math
 import json
-import logging
 import keyring
 import numpy as np
 from configparser import ConfigParser
@@ -46,24 +45,31 @@ def parse_args(argv):
     parser.add_argument('--query', type=str, required=False, default=TAP_QUERY, help='IVOA obscore query string')
     parser.add_argument('--sbids', required=False, default=None, type=str, nargs='+', help='Specific SBIDs of the observations to filter to use for the cutouts')
     parser.add_argument('--milkyway', required=False, default=False, action='store_true', help='Filter for MilkyWay cubes (WALLABY specific query)')
+    parser.add_argument('--no_keyring', required=False, default=False, action='store_true', help='Interactive prompt for password')
     parser.add_argument('--verbose', required=False, default=False, action='store_true', help='Verbose')
     args = parser.parse_args(argv)
     return args
 
 
 @task
-def download(name, ra, dec, radius, freq, vel, obs_collection, output, config, url, sbids, query, milkyway, verbose, *args, **kwargs):
+def download(name, ra, dec, radius, freq, vel, obs_collection, output, config, url, sbids, query, milkyway, verbose, no_keyring, *args, **kwargs):
     logger = get_run_logger()
 
     # Parse config
     assert os.path.exists(config), f'Config file not found at {config}'
     parser = ConfigParser()
     parser.read(config)
-    keyring.set_password(KEYRING_SERVICE, parser['CASDA']['username'], parser['CASDA']['password'])
+
+    if not no_keyring:
+        logger.info('Keyring information:')
+        logger.info(keyring.get_keyring())
+        keyring.set_password(KEYRING_SERVICE, parser['CASDA']['username'], parser['CASDA']['password'])
 
     # Login to CASDA
     logger.info('Authenticating with CASDA')
     casda = Casda()
+    if no_keyring:
+        logger.info('No keyring found. CASDA will prompt for password.')
     casda.login(username=parser['CASDA']['username'])
 
     # Object coordinates

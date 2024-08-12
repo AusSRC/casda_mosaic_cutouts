@@ -1,8 +1,5 @@
 astropy
 astroquery>=0.4.7
-keyring
-keyrings.alt
 prefect
 jinja2
 pathlib
-autokey
