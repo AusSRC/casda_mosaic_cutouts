@@ -23,6 +23,7 @@ pipeline.py [-h]
             [--account ACCOUNT] [--time TIME] [--mem MEM]
             [--askapsoft_docker ASKAPSOFT_DOCKER]
             [--local]
+            [--no_keyring]
             [--verbose]
 ```
 
@@ -119,9 +120,13 @@ Then you can run the job locally as a background process with
 nohup ./run.sh &
 ```
 
+**NOTE**: If you don't have a keyring (e.g. Apple KeyChain) installed on your machine, and are running this locally, you can provide an additional `--no_keyring` argument which will prompt you for your password. You will enter it into the command line where the code is running. In this case do not submit the job as a background process.
+
 ## Configuration
 
-To authenticate with [CASDA](https://data.csiro.au/) you will need a configuration file. A template `casda.ini`:
+To authenticate with [CASDA](https://data.csiro.au/) you will need to pass your username and password for your [OPAL account](https://opal.atnf.csiro.au/) via a configuration file. Note that the CASDA astroquery library does not seem to accept NEXUS credentials.
+
+A template `casda.ini`:
 
 ```
 [CASDA]
