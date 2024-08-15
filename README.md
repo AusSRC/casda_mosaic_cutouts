@@ -133,3 +133,9 @@ A template `casda.ini`:
 username = <username>
 password = <password>
 ```
+
+## FAQ
+
+### Known Linux issues
+
+For users running this tool locally on Linux machines using Docker, ensure that there are public write permissions on the output directory. You can do this with `chmod -R 777 <output_dir>`. This is required for the linmos docker container to write output mosaic and weights file. 
